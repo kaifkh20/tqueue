@@ -11,6 +11,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
@@ -18,6 +20,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.Builder;
+import lombok.ToString;
 
 /**
  *
@@ -29,6 +32,7 @@ import lombok.Builder;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@ToString
 @EqualsAndHashCode
 public class Task {
     @Id
@@ -44,7 +48,14 @@ public class Task {
     @Enumerated(EnumType.STRING)
     private TaskStatus taskStatus;
     
-    private LocalDateTime processingStartedAt;
+    private Long taskDuration;
     
-    private LocalDateTime processingEndedAt;
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant processingStartedAt;
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant processingEndedAt;
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant lastHeartBeatAt;
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant createdAt;
 }

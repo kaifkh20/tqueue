@@ -4,6 +4,7 @@
  */
 package com.kaif.tqueue.dtos;
 
+import java.time.Duration;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,5 +21,5 @@ import lombok.NoArgsConstructor;
 public class TaskAddRequestDto {
      private String taskName;
      private String taskDescription;
-     
+     private Long taskDuration;
 }

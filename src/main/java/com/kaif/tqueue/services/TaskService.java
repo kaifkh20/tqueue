@@ -4,13 +4,7 @@
      */
     package com.kaif.tqueue.services;
 
-    import com.kaif.tqueue.dtos.TaskAddRequestDto;
     import com.kaif.tqueue.models.Task;
-    import com.kaif.tqueue.models.TaskStatus;
-    import com.kaif.tqueue.repository.TaskRepository;
-    import jakarta.transaction.Transactional;
-    import java.time.LocalDateTime;
-    import java.util.List;
     import org.springframework.scheduling.annotation.Scheduled;
     import org.springframework.stereotype.Service;
 
@@ -33,19 +27,16 @@
         this.taskWorkerService = taskWorkerService;
     }
 
-        @Scheduled(fixedRate=2000,initialDelay=20000)
-        public void processOneTask(){
-            
-            Task task = taskWorkerService.claimTask();
-
-            try{
-                taskWorkerService.executeTask(task);
-            }catch(Exception e){
-                System.out.printf("Worker crashed for Task with ID: %d\n",task.getId());
-            }
-
-            taskWorkerService.completeTask(task);
-
-            System.out.printf("Task marked completed for ID: %d\n",task.getId());
+    @Scheduled(fixedRate=2000,initialDelay=20000)
+    public void processOneTask(){
+        Task task = taskWorkerService.claimTask();
+        if(task==null){
+            return ;
         }
+        try{
+            taskWorkerService.executeTask(task);
+        }catch(Exception e){
+            System.out.printf("Worker crashed for Task with ID: %d\n",task.getId());
+        }
+    }
     }
