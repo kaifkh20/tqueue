@@ -22,4 +22,5 @@ public class TaskAddRequestDto {
      private String taskName;
      private String taskDescription;
      private Long taskDuration;
+     private boolean shouldFail;
 }

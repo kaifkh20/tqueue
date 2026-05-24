@@ -11,5 +11,7 @@ package com.kaif.tqueue.models;
 public enum TaskStatus {
     PENDING,
     PROCESSING,
-    COMPLETED
+    INTERRUPTED,
+    COMPLETED,
+    FAILED
 }

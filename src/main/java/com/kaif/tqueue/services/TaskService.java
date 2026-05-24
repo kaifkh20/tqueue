@@ -5,7 +5,10 @@
     package com.kaif.tqueue.services;
 
     import com.kaif.tqueue.models.Task;
+import java.util.concurrent.Executor;
+import org.springframework.beans.factory.annotation.Qualifier;
     import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
     import org.springframework.stereotype.Service;
 
     /**
@@ -22,9 +25,11 @@
     @Service
     public class TaskService {
         private final TaskWorkerService taskWorkerService ;
+        private final ThreadPoolTaskExecutor executorPool;
 
-    public TaskService(TaskWorkerService taskWorkerService) {
+    public TaskService(TaskWorkerService taskWorkerService,@Qualifier("executorPool")Executor executorPool) {
         this.taskWorkerService = taskWorkerService;
+        this.executorPool = (ThreadPoolTaskExecutor)executorPool;
     }
 
     @Scheduled(fixedRate=2000,initialDelay=20000)
@@ -38,5 +43,29 @@
         }catch(Exception e){
             System.out.printf("Worker crashed for Task with ID: %d\n",task.getId());
         }
+        System.out.printf("""
+
+            ================== [EXECUTOR METRICS] ==================
+            Core Pool Size     : %d
+            Max Pool Size      : %d
+            Active Threads     : %d (Threads currently running tasks)
+            Current Pool Size  : %d (Total physical threads created)
+            --------------------------------------------------------
+            Tasks in Queue     : %d / 25
+            Queue Remaining    : %d
+            --------------------------------------------------------
+            Total Submitted    : %d (All-time tasks received)
+            Total Completed    : %d (Successfully finished)
+            ========================================================
+            """,
+            executorPool.getCorePoolSize(),
+            executorPool.getMaxPoolSize(),
+            executorPool.getActiveCount(),
+            executorPool.getPoolSize(),
+            executorPool.getThreadPoolExecutor().getQueue().size(),
+            executorPool.getThreadPoolExecutor().getQueue().remainingCapacity(),
+            executorPool.getThreadPoolExecutor().getTaskCount(),
+            executorPool.getThreadPoolExecutor().getCompletedTaskCount()
+        );
     }
     }

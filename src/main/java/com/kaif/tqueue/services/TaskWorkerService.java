@@ -21,8 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * @author kaif
  */
+
+
+
 @Service
 public class TaskWorkerService {
+    
     private final TaskRepository taskRepository;
     private final TaskRegistry taskRegistry;
     
@@ -36,6 +40,7 @@ public class TaskWorkerService {
                     .taskStatus(TaskStatus.PENDING)
                     .taskDuration(taskAddRequest.getTaskDuration())
                     .createdAt(Instant.now())
+                    .shouldFail(taskAddRequest.isShouldFail())
                     .build();
             taskRepository.save(task);
 
@@ -51,7 +56,7 @@ public class TaskWorkerService {
             }
             pendingTask.get().setTaskStatus(TaskStatus.PROCESSING);
             pendingTask.get().setProcessingStartedAt(Instant.now());
-            System.out.printf("Task with Id: %d and Name: %s is being processed and being marked as PROCESSING\n",pendingTask.get().getId(),pendingTask.get().getName());
+            System.out.printf("Task with Id: %d and Name: %s is claimed and will be marked as PROCESSING\n",pendingTask.get().getId(),pendingTask.get().getName());
             return pendingTask.get();
         }
 
@@ -63,16 +68,38 @@ public class TaskWorkerService {
         @Async("executorPool")
         public void executeTask(Task task) throws InterruptedException {
            try{
-               System.out.printf("Task with ID: %d and Name: %s will be working and using the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
+               System.out.printf("\n[WORKING]Task with ID: %d and Name: %s will be working and using the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
                Thread.sleep(task.getTaskDuration()*1000);//s->ms
-               System.out.printf("Task with ID: %d and Name: %s worked and used the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
+               if(task.isShouldFail()){
+                   throw new RuntimeException("Simulated Failure");
+               }
+               System.out.printf("\n[WORKED]Task with ID: %d and Name: %s worked and used the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
                completeTask(task);
            }catch(InterruptedException e){
                 System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
+                interruptTask(task);
                 Thread.currentThread().interrupt();
+            }catch(RuntimeException e){
+                System.out.printf("\n[RUNTIME EXCEPTION] Task ID: %d. Retry Count: %d \n",task.getId(),task.getRetryCount());
+                retryTask(task);
             }catch (Exception e) {
-                System.out.printf("Worker crashed during execution for Task with ID: %d\n", task.getId());
+                System.out.printf("\n[WORKER CRASHED] Worker crashed during execution for Task with ID: %d\n", task.getId());
             }
+        }
+        
+        public void processTask(Task task){
+            taskRegistry.setProcessingStatus(task);
+            System.out.printf("Task with ID: %d is being PROCESSED...\n",task.getId());
+        }
+        
+        public void retryTask(Task task){
+            taskRegistry.setRetryStatus(task);
+            System.out.printf("Task with ID: %d is being retried...\n", task.getId());
+        }
+        
+        public void interruptTask(Task task){
+            taskRegistry.setInterruptStatus(task);
+            System.out.printf("Task with ID: %d is interrupted\n",task.getId());
         }
         
         public void completeTask(Task task){

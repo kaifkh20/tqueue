@@ -20,9 +20,16 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class TaskRegistry {
+    public final Integer MAX_RETRY  = 5;
     private final TaskRepository taskRepository;
     public TaskRegistry(TaskRepository taskRepository){
         this.taskRepository = taskRepository;
+    }
+    @Transactional
+    public void setProcessingStatus(Task task){
+        task.setTaskStatus(TaskStatus.PROCESSING);
+        task.setProcessingStartedAt(Instant.now());
+        taskRepository.save(task);
     }
     @Transactional
     public void setCompleteStatus(Task task){
@@ -30,5 +37,22 @@ public class TaskRegistry {
         task.setProcessingEndedAt(Instant.now());
         taskRepository.save(task);
     }
-    
+    @Transactional
+    public void setInterruptStatus(Task task){
+        task.setTaskStatus(TaskStatus.INTERRUPTED);
+        task.setProcessingEndedAt(Instant.now());
+        taskRepository.save(task);
+    }
+    @Transactional
+    public void setRetryStatus(Task task){
+        int retryCount = task.getRetryCount();
+        if(retryCount<MAX_RETRY){
+            task.setTaskStatus(TaskStatus.PENDING);
+        }else{
+            task.setTaskStatus(TaskStatus.FAILED);   
+        }
+        task.setRetryCount(retryCount+1);
+        task.setRetriedAt(Instant.now());
+        taskRepository.save(task);
+    }
 }

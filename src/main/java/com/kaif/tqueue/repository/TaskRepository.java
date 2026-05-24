@@ -24,20 +24,31 @@ public interface TaskRepository extends JpaRepository<Task,Long>{
 //    @Query(value="Select * from task where task status='PROCESSING' and processing_started_at-now()>INTERVAL '5 minutes' limit 1 for update skip locked",nativeQuery=true)
 //    public Task findTaskProcessingForMoreThanFiveMinutes();
     @Query(value = """
-        SELECT *
-        FROM task
-        WHERE (
-            task_status = 'PENDING'
-            OR (
-                task_status = 'PROCESSING'
-                AND processing_started_at < NOW() - INTERVAL '5 minutes'
-            )
-        )
-        ORDER BY created_at
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED
-        """,
-        nativeQuery = true)
+    SELECT *
+    FROM task
+    WHERE (
+        -- Condition 1: Ready for a retry
+        (task_status = 'PENDING' AND retry_count<=5 AND next_retry_at IS NOT NULL AND next_retry_at <= NOW())
+        OR 
+        -- Condition 2: Brand new pending tasks (never retried before)
+        (task_status = 'PENDING' AND next_retry_at IS NULL)
+        OR 
+        -- Condition 3: Stuck/timed-out tasks that need recovering
+        (task_status = 'PROCESSING' AND processing_started_at < NOW() - INTERVAL '5 minutes')
+    )
+    ORDER BY 
+        -- Priority 1: Retries and stuck tasks come first (assign lowest weight)
+        CASE 
+            WHEN task_status = 'PENDING' AND next_retry_at IS NOT NULL THEN 1
+            WHEN task_status = 'PROCESSING' THEN 2
+            ELSE 3 -- Brand new PENDING tasks
+        END ASC,
+        -- Priority 2: Tie-breaker within those categories (oldest first)
+        created_at ASC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+    """,
+    nativeQuery = true)
     Optional<Task> findNextTaskToProcess();
 
 

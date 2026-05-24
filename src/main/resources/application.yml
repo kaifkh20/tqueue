@@ -16,9 +16,9 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
-    
+#  
 #logging:
 #    level: 
 #        org:
-#            hibernate:
-#                SQL: DEBUG
+#          springframework:
+#            web: DEBUG

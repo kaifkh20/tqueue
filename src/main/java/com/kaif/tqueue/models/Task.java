@@ -50,12 +50,27 @@ public class Task {
     
     private Long taskDuration;
     
+    @Builder.Default
+    private boolean shouldFail = false;
+    
     @Column(columnDefinition = "timestamp with time zone")
     private Instant processingStartedAt;
+    
     @Column(columnDefinition = "timestamp with time zone")
     private Instant processingEndedAt;
+    
     @Column(columnDefinition = "timestamp with time zone")
     private Instant lastHeartBeatAt;
+    
     @Column(columnDefinition = "timestamp with time zone")
     private Instant createdAt;
+    
+    @Builder.Default
+    private Integer retryCount = 0;
+    
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant retriedAt;
+    
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant nextRetryAt;
 }
