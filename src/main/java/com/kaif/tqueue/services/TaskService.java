@@ -31,6 +31,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
         this.taskWorkerService = taskWorkerService;
         this.executorPool = (ThreadPoolTaskExecutor)executorPool;
     }
+    
+    
 
     @Scheduled(fixedRate=2000,initialDelay=20000)
     public void processOneTask(){
@@ -68,4 +70,5 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
             executorPool.getThreadPoolExecutor().getCompletedTaskCount()
         );
     }
-    }
+    
+ }

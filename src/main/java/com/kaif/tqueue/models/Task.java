@@ -73,4 +73,7 @@ public class Task {
     
     @Column(columnDefinition = "timestamp with time zone")
     private Instant nextRetryAt;
+    
+    @Column(columnDefinition = "timestamp with time zone")
+    private Instant heartBeatAt;
 }

@@ -55,4 +55,10 @@ public class TaskRegistry {
         task.setRetriedAt(Instant.now());
         taskRepository.save(task);
     }
+    
+    @Transactional 
+    public void setHeartBeatAt(Task task){
+        task.setHeartBeatAt(Instant.now());
+        taskRepository.save(task);
+    }
 }
