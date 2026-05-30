@@ -47,13 +47,17 @@ public interface TaskRepository extends JpaRepository<Task,Long>{
     nativeQuery = true)
     Optional<Task> findNextTaskToProcess();
     @Query(value = """
-        SELECT * FROM task 
-        WHERE task_status = 'PROCESSING' 
-          AND heart_beat_at < NOW() - INTERVAL '25 seconds' 
-          AND retry_count <= 5 
-          AND (next_retry_at IS NULL OR next_retry_at <= NOW())
-        ORDER BY created_at ASC 
-        FOR UPDATE SKIP LOCKED
+    SELECT * FROM task 
+    WHERE task_status = 'PROCESSING' 
+      AND (
+        (heart_beat_at IS NOT NULL AND heart_beat_at < NOW() - INTERVAL '25 seconds')
+        OR 
+        (heart_beat_at IS NULL AND processing_started_at < NOW() - INTERVAL '5 minutes')
+      ) 
+      AND retry_count <= 5 
+      AND (next_retry_at IS NULL OR next_retry_at <= NOW()) 
+    ORDER BY created_at ASC 
+    FOR UPDATE SKIP LOCKED
     """, nativeQuery = true)
     List<Task> getDeadTasks();    
 }
