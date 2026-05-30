@@ -7,6 +7,7 @@ package com.kaif.tqueue.services;
 import com.kaif.tqueue.models.Task;
 import com.kaif.tqueue.models.TaskStatus;
 import com.kaif.tqueue.repository.TaskRepository;
+import java.time.Duration;
 import java.time.Instant;
 
 import java.time.LocalDateTime;
@@ -53,12 +54,25 @@ public class TaskRegistry {
         }
         task.setRetryCount(retryCount+1);
         task.setRetriedAt(Instant.now());
+//        adding jitter
+        long delaySeconds = (long) Math.pow(2, task.getRetryCount());
+        long jitterMillis = (long) (Math.random() * 1000);
+
+        task.setNextRetryAt(Instant.now()
+            .plus(Duration.ofSeconds(delaySeconds))
+            .plus(Duration.ofMillis(jitterMillis)));
         taskRepository.save(task);
     }
     
     @Transactional 
     public void setHeartBeatAt(Task task){
         task.setHeartBeatAt(Instant.now());
+        taskRepository.save(task);
+    }
+
+    void setPendingStatus(Task task) {
+        task.setTaskStatus(TaskStatus.PENDING);
+        task.setNextRetryAt(Instant.now().plus(Duration.ofSeconds(10)));
         taskRepository.save(task);
     }
 }

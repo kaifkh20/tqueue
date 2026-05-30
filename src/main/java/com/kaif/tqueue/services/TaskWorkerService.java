@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.concurrent.Exchanger;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -107,6 +108,7 @@ public class TaskWorkerService {
                completeTask(task);
            }catch(InterruptedException e){
                 System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
+                System.out.println(e);
                 interruptTask(task);
                 Thread.currentThread().interrupt();
             }catch(RuntimeException e){
@@ -114,7 +116,8 @@ public class TaskWorkerService {
                 retryTask(task);
             }catch (Exception e) {
                 System.out.printf("\n[WORKER CRASHED] Worker crashed during execution for Task with ID: %d\n", task.getId());
-            }
+                System.out.println(e);
+            }   
         }
         
         
@@ -164,6 +167,11 @@ public class TaskWorkerService {
         public void interruptTask(Task task){
             taskRegistry.setInterruptStatus(task);
             System.out.printf("Task with ID: %d is interrupted\n",task.getId());
+        }
+        
+        public void pendingTask(Task task){
+            taskRegistry.setPendingStatus(task);
+            System.out.printf("Task with ID: %d is being marked as pending\n",task.getId());
         }
         
         public void completeTask(Task task){

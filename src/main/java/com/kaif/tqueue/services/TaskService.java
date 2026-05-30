@@ -7,6 +7,7 @@
     import com.kaif.tqueue.models.Task;
 import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskRejectedException;
     import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
     import org.springframework.stereotype.Service;
@@ -42,8 +43,13 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
         }
         try{
             taskWorkerService.executeTask(task);
-        }catch(Exception e){
-            System.out.printf("Worker crashed for Task with ID: %d\n",task.getId());
+        }catch(TaskRejectedException e){
+            System.out.printf("\n[EXECUTOR EXHAUSTED] Worker crashed during execution for Task with ID: %d\n", task.getId());
+//            when Task is rejected we mark it as pending
+            taskWorkerService.pendingTask(task);
+        }
+        catch(Exception e){
+            System.out.printf("\n[EXECPTION] %s",e.getMessage());
         }
         System.out.printf("""
 
