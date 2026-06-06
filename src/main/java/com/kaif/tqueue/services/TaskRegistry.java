@@ -61,6 +61,12 @@ public class TaskRegistry {
         task.setNextRetryAt(Instant.now()
             .plus(Duration.ofSeconds(delaySeconds))
             .plus(Duration.ofMillis(jitterMillis)));
+        
+        task.setHeartBeatAt(null);
+        task.setProcessingStartedAt(null);
+        task.setLastHeartBeatAt(null);
+        task.setProcessingEndedAt(null);
+        
         taskRepository.save(task);
     }
     

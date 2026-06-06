@@ -45,7 +45,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
             taskWorkerService.executeTask(task);
         }catch(TaskRejectedException e){
             System.out.printf("\n[EXECUTOR EXHAUSTED] Worker crashed during execution for Task with ID: %d\n", task.getId());
-//            when Task is rejected we mark it as pending
+//            when Task is rejected we mark it as pending after claiming
             taskWorkerService.pendingTask(task);
         }
         catch(Exception e){
