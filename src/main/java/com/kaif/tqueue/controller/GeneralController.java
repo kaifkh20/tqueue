@@ -24,6 +24,11 @@ public class GeneralController {
         this.generalService = generalService;
     }
 
+    @GetMapping("/metrics")
+    public ResponseEntity<?> getMetrics(){
+        return ResponseEntity.ok(generalService.getMetrics());
+    }
+    
     @GetMapping("/health")
     public ResponseEntity<?> getHealth(){
         return ResponseEntity.ok(generalService.getHealthService());

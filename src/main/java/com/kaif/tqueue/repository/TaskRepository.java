@@ -19,10 +19,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface TaskRepository extends JpaRepository<Task,Long>{
     public List<Task> findAllTaskByTaskStatus(TaskStatus taskStatus);
-//    @Query(value = "Select * from task Where task_status='PENDING' limit 1 for update skip locked",nativeQuery=true)
-//    public Task findPendingWithTaskLocked();
-//    @Query(value="Select * from task where task status='PROCESSING' and processing_started_at-now()>INTERVAL '5 minutes' limit 1 for update skip locked",nativeQuery=true)
-//    public Task findTaskProcessingForMoreThanFiveMinutes();
     @Query(value = """
         SELECT *
         FROM task
@@ -59,5 +55,7 @@ public interface TaskRepository extends JpaRepository<Task,Long>{
     ORDER BY created_at ASC 
     FOR UPDATE SKIP LOCKED
     """, nativeQuery = true)
-    List<Task> getDeadTasks();    
+    List<Task> getDeadTasks();  
+    
+    List<Task> findAllByTaskStatus(TaskStatus taskStatus);
 }

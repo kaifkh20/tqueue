@@ -21,6 +21,6 @@ import lombok.NoArgsConstructor;
 public class TaskAddRequestDto {
      private String taskName;
      private String taskDescription;
-     private Long taskDuration;
-     private boolean shouldFail;
+//     private Long taskDuration;
+//     private boolean shouldFail;
 }

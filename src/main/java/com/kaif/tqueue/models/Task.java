@@ -48,11 +48,6 @@ public class Task {
     @Enumerated(EnumType.STRING)
     private TaskStatus taskStatus;
     
-    private Long taskDuration;
-    
-    @Builder.Default
-    private boolean shouldFail = false;
-    
     @Column(columnDefinition = "timestamp with time zone")
     private Instant processingStartedAt;
     

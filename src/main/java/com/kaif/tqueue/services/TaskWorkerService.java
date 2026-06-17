@@ -5,6 +5,7 @@
 package com.kaif.tqueue.services;
 
 import com.kaif.tqueue.dtos.TaskAddRequestDto;
+import com.kaif.tqueue.miscServices.EmailService;
 import com.kaif.tqueue.models.Task;
 import com.kaif.tqueue.models.TaskStatus;
 import com.kaif.tqueue.repository.TaskRepository;
@@ -36,20 +37,20 @@ public class TaskWorkerService {
     
     private final TaskRepository taskRepository;
     private final TaskRegistry taskRegistry;
-    private final Exchanger<String> exchanger;
+    private final EmailService emailService;
     
-        public TaskWorkerService(TaskRepository taskRepository,TaskRegistry taskRegistry){
+        public TaskWorkerService(TaskRepository taskRepository,TaskRegistry taskRegistry,EmailService emailService){
             this.taskRepository = taskRepository;
             this.taskRegistry = taskRegistry;
-            this.exchanger = new Exchanger<>();
+            this.emailService = emailService;
         }
         public String addTask(TaskAddRequestDto taskAddRequest){
             Task task = Task.builder().name(taskAddRequest.getTaskName()).
                     description(taskAddRequest.getTaskDescription())
                     .taskStatus(TaskStatus.PENDING)
-                    .taskDuration(taskAddRequest.getTaskDuration())
+//                    .taskDuration(taskAddRequest.getTaskDuration())
                     .createdAt(Instant.now())
-                    .shouldFail(taskAddRequest.isShouldFail())
+//                    .shouldFail(taskAddRequest.isShouldFail())
                     .build();
             taskRepository.save(task);
 
@@ -69,55 +70,58 @@ public class TaskWorkerService {
             return pendingTask.get();
         }
 
-//        public void executeTask(Task task) throws InterruptedException{
-//            System.out.printf("Task with ID: %d executor started and is being executed now.\n",task.getId());
-//            Thread.sleep(10000);
-//            System.out.printf("Task with ID: %d execution completed\n",task.getId());
-//        }
         @Async("executorPool")
         public void executeTask(Task task) throws InterruptedException {
            try{
-               System.out.printf("\n[WORKING]Task with ID: %d and Name: %s will be working and using the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
+//               System.out.printf("\n[WORKING]Task with ID: %d and Name: %s will be working and using the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
 //               Thread.sleep(task.getTaskDuration()*1000);//s->ms
-                long durationMs = task.getTaskDuration() * 1000L;
+//                long durationMs = task.getTaskDuration() * 1000L;
+                
+                System.out.printf("\n[WORKING]Task with ID: %d and Name: %s\n",task.getId(),task.getName());
                 long startTime = System.currentTimeMillis();
-                long endTime = startTime + durationMs;
                 
                 // when the task starts we heartbeat it 
                 updateHeartBeat(task);
                 
-                while (System.currentTimeMillis() < endTime) {
-
-                    if (Thread.currentThread().isInterrupted()) {
-                        System.out.printf("\n[CANCELLED] Task with ID: %d was interrupted.\n", task.getId());
-                        throw new InterruptedException("Task aborted due to executor shutdown.");
-                    }
-                    
-                    Instant heartBeatAt = task.getHeartBeatAt();
-                    // every 10 seconds we check if its healthy
-                    if(Instant.now().isAfter(heartBeatAt.plusSeconds(10))){
-                        updateHeartBeat(task);
-                    }
-
-                    Thread.onSpinWait(); 
-                }
-               if(task.isShouldFail()){
-                   throw new RuntimeException("Simulated Failure");
-               }
-               System.out.printf("\n[WORKED]Task with ID: %d and Name: %s worked and used the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
+                emailService.processEmail(task.getId(),"example@gmail.com");
+                
+                long endTime = System.currentTimeMillis();
+//                while (System.currentTimeMillis() < endTime) {
+//
+//                    if (Thread.currentThread().isInterrupted()) {
+//                        System.out.printf("\n[CANCELLED] Task with ID: %d was interrupted.\n", task.getId());
+//                        throw new InterruptedException("Task aborted due to executor shutdown.");
+//                    }
+//                    
+//                    Instant heartBeatAt = task.getHeartBeatAt();
+//                    // every 10 seconds we check if its healthy
+//                    if(Instant.now().isAfter(heartBeatAt.plusSeconds(10))){
+//                        updateHeartBeat(task);
+//                    }
+//
+//                    Thread.onSpinWait(); 
+//                }
+//               if(task.isShouldFail()){
+//                   throw new RuntimeException("Simulated Failure");
+//               }
+                long duration = endTime-startTime;
+               System.out.printf("\n[WORKED]Task with ID: %d and Name: %s worked and used the thread for %d seconds\n",task.getId(),task.getName(),duration);
                completeTask(task);
-           }catch(InterruptedException e){
-                System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
-                System.out.println(e);
-                interruptTask(task);
-                Thread.currentThread().interrupt();
-            }catch(RuntimeException e){
+           }
+//           catch(InterruptedException e){
+//                System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
+//                System.out.println(e);
+//                interruptTask(task);
+//                Thread.currentThread().interrupt();
+//            }
+           catch(RuntimeException e){
                 System.out.printf("\n[RUNTIME EXCEPTION] Task ID: %d. Retry Count: %d \n",task.getId(),task.getRetryCount());
                 retryTask(task);
             }catch (Exception e) {
                 System.out.printf("\n[WORKER CRASHED] Worker crashed during execution for Task with ID: %d\n", task.getId());
                 System.out.println(e);
-            }   
+            } 
+           
         }
         
         
