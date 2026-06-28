@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Exchanger;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.springframework.core.task.TaskRejectedException;
@@ -70,59 +72,47 @@ public class TaskWorkerService {
             return pendingTask.get();
         }
 
-        @Async("executorPool")
-        public void executeTask(Task task) throws InterruptedException {
-           try{
-//               System.out.printf("\n[WORKING]Task with ID: %d and Name: %s will be working and using the thread for %d seconds\n",task.getId(),task.getName(),task.getTaskDuration());
-//               Thread.sleep(task.getTaskDuration()*1000);//s->ms
-//                long durationMs = task.getTaskDuration() * 1000L;
-                
-                System.out.printf("\n[WORKING]Task with ID: %d and Name: %s\n",task.getId(),task.getName());
-                long startTime = System.currentTimeMillis();
-                
-                // when the task starts we heartbeat it 
-                updateHeartBeat(task);
-                
-                emailService.processEmail(task.getId(),"example@gmail.com");
-                
-                long endTime = System.currentTimeMillis();
-//                while (System.currentTimeMillis() < endTime) {
-//
-//                    if (Thread.currentThread().isInterrupted()) {
-//                        System.out.printf("\n[CANCELLED] Task with ID: %d was interrupted.\n", task.getId());
-//                        throw new InterruptedException("Task aborted due to executor shutdown.");
-//                    }
-//                    
-//                    Instant heartBeatAt = task.getHeartBeatAt();
-//                    // every 10 seconds we check if its healthy
-//                    if(Instant.now().isAfter(heartBeatAt.plusSeconds(10))){
-//                        updateHeartBeat(task);
-//                    }
-//
-//                    Thread.onSpinWait(); 
-//                }
-//               if(task.isShouldFail()){
-//                   throw new RuntimeException("Simulated Failure");
-//               }
-                long duration = endTime-startTime;
-               System.out.printf("\n[WORKED]Task with ID: %d and Name: %s worked and used the thread for %d seconds\n",task.getId(),task.getName(),duration);
-               completeTask(task);
-           }
-//           catch(InterruptedException e){
-//                System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
-//                System.out.println(e);
-//                interruptTask(task);
-//                Thread.currentThread().interrupt();
-//            }
-           catch(RuntimeException e){
-                System.out.printf("\n[RUNTIME EXCEPTION] Task ID: %d. Retry Count: %d \n",task.getId(),task.getRetryCount());
-                retryTask(task);
-            }catch (Exception e) {
-                System.out.printf("\n[WORKER CRASHED] Worker crashed during execution for Task with ID: %d\n", task.getId());
-                System.out.println(e);
-            } 
-           
+    @Async("executorPool")
+    public void executeTask(Task task) {
+        System.out.printf("\n[WORKING] Task with ID: %d and Name: %s\n", task.getId(), task.getName());
+        long startTime = System.currentTimeMillis();
+
+        // 1. Spin up a lightweight scheduler dedicated solely to this task's background heartbeat
+        ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor();
+
+        try {
+            heartbeatScheduler.scheduleAtFixedRate(() -> {
+                try {
+                    updateHeartBeat(task);
+                } catch (Exception e) {
+                    System.err.printf("Failed to update heartbeat for task %d: %s\n", task.getId(), e.getMessage());
+                }
+            }, 0, 5, TimeUnit.SECONDS);
+
+            emailService.processEmail(task.getId(), "example@gmail.com");
+
+            long duration = (System.currentTimeMillis() - startTime) / 1000;
+            System.out.printf("\n[WORKED] Task with ID: %d and Name: %s completed in %d seconds\n", task.getId(), task.getName(), duration);
+
+            completeTask(task);
+
+        } catch (RuntimeException e) {
+            System.out.printf("\n[RUNTIME EXCEPTION] Task ID: %d. Retry Count: %d \n", task.getId(), task.getRetryCount());
+            retryTask(task);
+
+        } catch (Exception e) {
+            if (e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
+                System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
+                interruptTask(task);
+                Thread.currentThread().interrupt(); 
+            } else {
+                System.out.printf("\n[WORKER CRASHED] Unexpected failure for Task with ID: %d\n", task.getId());
+                e.printStackTrace();
+            }
+        } finally {
+            heartbeatScheduler.shutdown();
         }
+    }
         
         
         //    every 30 seconds it checks for dead workers and retry it 
