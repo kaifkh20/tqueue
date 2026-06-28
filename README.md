@@ -4,6 +4,9 @@ A production-inspired asynchronous task processing engine built with Spring Boot
 
 ---
 
+<img width="1536" height="1024" alt="architecture-tqueue" src="https://github.com/user-attachments/assets/8723526a-9ea5-4301-946c-ab859dc50d1c" />
+
+
 ## Motivation
 
 Modern backend applications frequently need to execute long-running or failure-prone work outside the request-response lifecycle.
