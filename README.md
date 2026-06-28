@@ -23,24 +23,32 @@ Rather than relying immediately on Kafka, RabbitMQ, or Redis-based job queues, t
 ## Architecture
 
 ```text
-                REST API
-                   │
-                   ▼
-          PostgreSQL Task Queue
-                   │
-                   ▼
-        Task Scheduler / Claimer
-                   │
-                   ▼
-       ThreadPoolTaskExecutor
-                   │
-                   ▼
-            Worker Threads
-                   │
-                   ▼
-          Business Task Handler
-```
 
+                 Client
+                    │
+                    ▼
+          POST /tasks (REST API)
+                    │
+                    ▼
+        PostgreSQL Task Queue
+                    │
+      Poll + Claim (SKIP LOCKED)
+                    │
+                    ▼
+        ThreadPoolTaskExecutor
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+     Worker 1               Worker 2
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+          Business Task Handler
+                    │
+          Mark COMPLETED / RETRY
+
+
+```
 ---
 
 ## Features
@@ -62,40 +70,89 @@ Rather than relying immediately on Kafka, RabbitMQ, or Redis-based job queues, t
 ## Task Lifecycle
 
 ```text
-PENDING
-   │
-   ▼
-PROCESSING
-   │
-   ├──────────────► COMPLETED
-   │
-   ▼
-Runtime Exception
-   │
-   ▼
-RETRY (Backoff)
-   │
-   ▼
-PENDING
-```
+               PENDING
+                  │
+                  ▼
+             CLAIMED
+                  │
+                  ▼
+            PROCESSING
+        ┌─────────┴─────────┐
+        │                   │
+        ▼                   ▼
+   COMPLETED         Runtime Exception
+                            │
+                            ▼
+                 Retry (Backoff + Jitter)
+                            │
+                            ▼
+                         PENDING
 
-Worker crash recovery:
+          Worker Crash
+               │
+               ▼
+      Heartbeat Timeout
+               │
+               ▼
+      Dead-man Switch
+               │
+               ▼
+            Reclaimed
+
+```
+## Worker crash recovery:
 
 ```text
-PROCESSING
-      │
-Heartbeat updates
-      │
-Heartbeat stops
-      │
-Dead-man switch detects timeout
-      │
-Task reclaimed
-      │
-PROCESSING
+Worker
+ │
+ │ Heartbeat (10s)
+ ▼
+Database
+ │
+ │ Last heartbeat updated
+ ▼
+
+Worker crashes
+ │
+ ▼
+No heartbeat
+
+Main Scheduler
+ │
+ │ Every 30s
+ ▼
+
+Heartbeat older than threshold?
+
+      YES
+       │
+       ▼
+Move task back to PENDING
+
+       │
+       ▼
+Another worker claims task
 ```
 
 ---
+
+## Multi Worker Co-ordination
+
+```text
+                  PostgreSQL
+              Task(id=101,PENDING)
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+ Spring Boot A              Spring Boot B
+        │                         │
+ SELECT ... SKIP LOCKED   SELECT ... SKIP LOCKED
+        │                         │
+   Row Locked               Skips Locked Row
+        │                         │
+        ▼                         ▼
+ Processes Task              Claims Next Task
+```
 
 ## Failure Scenarios Covered
 
