@@ -39,16 +39,15 @@ public class TaskWorkerService {
     
     private final TaskRepository taskRepository;
     private final TaskRegistry taskRegistry;
-    private final EmailService emailService;
+    private final TaskExecutorRegistry taskExecutorRegistry;
     
-        public TaskWorkerService(TaskRepository taskRepository,TaskRegistry taskRegistry,EmailService emailService){
+        public TaskWorkerService(TaskRepository taskRepository,TaskRegistry taskRegistry,TaskExecutorRegistry taskExecutorRegistry){
             this.taskRepository = taskRepository;
             this.taskRegistry = taskRegistry;
-            this.emailService = emailService;
+            this.taskExecutorRegistry = taskExecutorRegistry;
         }
         public String addTask(TaskAddRequestDto taskAddRequest){
-            Task task = Task.builder().name(taskAddRequest.getTaskName()).
-                    description(taskAddRequest.getTaskDescription())
+            Task task = Task.builder()
                     .taskStatus(TaskStatus.PENDING)
 //                    .taskDuration(taskAddRequest.getTaskDuration())
                     .createdAt(Instant.now())
@@ -68,13 +67,13 @@ public class TaskWorkerService {
             }
             pendingTask.get().setTaskStatus(TaskStatus.PROCESSING);
             pendingTask.get().setProcessingStartedAt(Instant.now());
-            System.out.printf("Task with Id: %d and Name: %s is claimed and will be marked as PROCESSING\n",pendingTask.get().getId(),pendingTask.get().getName());
+            System.out.printf("Task with Id: %d is claimed and will be marked as PROCESSING\n",pendingTask.get().getId());
             return pendingTask.get();
         }
 
     @Async("executorPool")
     public void executeTask(Task task) {
-        System.out.printf("\n[WORKING] Task with ID: %d and Name: %s\n", task.getId(), task.getName());
+        System.out.printf("\n[WORKING] Task with ID: %d \n", task.getId());
         long startTime = System.currentTimeMillis();
 
         // 1. Spin up a lightweight scheduler dedicated solely to this task's background heartbeat
@@ -88,11 +87,12 @@ public class TaskWorkerService {
                     System.err.printf("Failed to update heartbeat for task %d: %s\n", task.getId(), e.getMessage());
                 }
             }, 0, 5, TimeUnit.SECONDS);
-
-            emailService.processEmail(task.getId(), "example@gmail.com");
+            
+            TaskExecutor executor = taskExecutorRegistry.resolve(task);
+            executor.execute(task);
 
             long duration = (System.currentTimeMillis() - startTime) / 1000;
-            System.out.printf("\n[WORKED] Task with ID: %d and Name: %s completed in %d seconds\n", task.getId(), task.getName(), duration);
+            System.out.printf("\n[WORKED] Task with ID: %d and completed in %d seconds\n", task.getId(), duration);
 
             completeTask(task);
 
@@ -130,8 +130,8 @@ public class TaskWorkerService {
             System.out.printf("\n[DEAD-MAN-SWITCH] WARNING: Found %d tasks that missed their heartbeat thresholds.\n", deadTasks.size());
 
             for (Task task : deadTasks) {
-                System.out.printf("\n[RECOVERY] Initiating auto-retry for Task [ID: %d | Name: %s]\n", 
-                        task.getId(), task.getName());
+                System.out.printf("\n[RECOVERY] Initiating auto-retry for Task [ID: %d]\n", 
+                        task.getId());
 
                 try {
                     retryTask(task);

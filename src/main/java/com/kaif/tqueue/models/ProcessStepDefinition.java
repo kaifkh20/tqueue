@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import java.time.Instant;
@@ -32,16 +33,16 @@ public class ProcessStepDefinition {
     @GeneratedValue(strategy=GenerationType.IDENTITY)
     private Long id;
     
-    @OneToOne
+    @ManyToOne
     @JoinColumn(name="process_definition_id",referencedColumnName="id")
     private ProcessDefinition processDefinition;
     
-    @OneToMany(mappedBy="processStepDefinition")
-    private List<Task> tasks;
+//    @OneToMany(mappedBy="processStepDefinition")
+//    private List<Task> tasks;
     
     private Integer stepOrder;
     
-    private String taskType;
+    private String activityType;
     
     private Instant createdAt;
 }
