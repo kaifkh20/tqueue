@@ -5,6 +5,7 @@
 package com.kaif.tqueue.services;
 
 import com.kaif.tqueue.models.Task;
+import com.kaif.tqueue.models.TaskType;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -19,16 +20,24 @@ import org.springframework.stereotype.Service;
 @Service
 public class TaskExecutorRegistry {
 
-    private final Map<String, TaskExecutor> executorMap;
+    private final Map<TaskType, TaskExecutor> executorMap;
 
-    // Spring automatically discovers and maps all TaskExecutor beans by getTaskType()
     @Autowired
     public TaskExecutorRegistry(List<TaskExecutor> executors) {
         this.executorMap = executors.stream()
-                .collect(Collectors.toMap(TaskExecutor::getTaskType, Function.identity()));
+                .collect(Collectors.toMap(
+                    TaskExecutor::getTaskType, 
+                    Function.identity(),
+                    (existing, replacement) -> existing // Prevents crashes if two beans register the same type
+                ));
     }
 
     public TaskExecutor resolve(Task task) {
-        return executorMap.get(task.getName());
+        TaskExecutor executor = executorMap.get(task.getTaskType());        
+        if (executor == null) {
+            throw new IllegalArgumentException("No executor registered for task type: " + task.getTaskType());
+        }
+        
+        return executor;
     }
 }

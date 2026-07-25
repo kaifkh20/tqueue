@@ -48,6 +48,9 @@ public class TaskWorkerService {
         }
         public String addTask(TaskAddRequestDto taskAddRequest){
             Task task = Task.builder()
+                    .name(taskAddRequest.getTaskName())
+                    .description(taskAddRequest.getTaskDescription())
+                    .taskType(taskAddRequest.getTaskType())
                     .taskStatus(TaskStatus.PENDING)
 //                    .taskDuration(taskAddRequest.getTaskDuration())
                     .createdAt(Instant.now())

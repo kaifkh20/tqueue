@@ -5,6 +5,7 @@
 package com.kaif.tqueue.services;
 
 import com.kaif.tqueue.models.Task;
+import com.kaif.tqueue.models.TaskType;
 
 /**
  *
@@ -14,6 +15,6 @@ import com.kaif.tqueue.models.Task;
 
 
 public interface TaskExecutor {
-    String getTaskType();
+    TaskType getTaskType();
     void execute(Task task);
 }
