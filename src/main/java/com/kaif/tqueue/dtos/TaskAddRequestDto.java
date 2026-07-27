@@ -4,7 +4,6 @@
  */
 package com.kaif.tqueue.dtos;
 
-import com.kaif.tqueue.models.TaskType;
 import java.time.Duration;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,7 +21,7 @@ import lombok.NoArgsConstructor;
 public class TaskAddRequestDto {
      private String taskName;
      private String taskDescription;
-     private TaskType taskType;
+//     private TaskType taskType;
 //     private Long taskDuration;
 //     private boolean shouldFail;
 }

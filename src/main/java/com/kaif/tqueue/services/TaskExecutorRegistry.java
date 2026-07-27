@@ -4,8 +4,8 @@
  */
 package com.kaif.tqueue.services;
 
+import com.kaif.tqueue.models.ActivityType;
 import com.kaif.tqueue.models.Task;
-import com.kaif.tqueue.models.TaskType;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class TaskExecutorRegistry {
 
-    private final Map<TaskType, TaskExecutor> executorMap;
+    private final Map<ActivityType, TaskExecutor> executorMap;
 
     @Autowired
     public TaskExecutorRegistry(List<TaskExecutor> executors) {

@@ -8,6 +8,6 @@ package com.kaif.tqueue.models;
  *
  * @author kaif
  */
-public enum TaskType {
+public enum ActivityType {
     EMAIL_SERVICE
 }

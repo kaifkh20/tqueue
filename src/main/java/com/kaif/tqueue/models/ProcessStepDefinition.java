@@ -42,7 +42,7 @@ public class ProcessStepDefinition {
     
     private Integer stepOrder;
     
-    private String activityType;
+    private ActivityType activityType;
     
     private Instant createdAt;
 }

@@ -50,7 +50,7 @@ public class TaskWorkerService {
             Task task = Task.builder()
                     .name(taskAddRequest.getTaskName())
                     .description(taskAddRequest.getTaskDescription())
-                    .taskType(taskAddRequest.getTaskType())
+//                    .taskType(taskAddRequest.getTaskType())
                     .taskStatus(TaskStatus.PENDING)
 //                    .taskDuration(taskAddRequest.getTaskDuration())
                     .createdAt(Instant.now())

@@ -51,7 +51,7 @@ public class Task {
     private TaskStatus taskStatus;
     
     @Enumerated(EnumType.STRING)
-    private TaskType taskType;
+    private ActivityType taskType;
     
     @Column(columnDefinition = "timestamp with time zone")
     private Instant processingStartedAt;

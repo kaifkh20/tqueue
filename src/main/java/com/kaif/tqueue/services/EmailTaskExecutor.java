@@ -5,8 +5,8 @@
 package com.kaif.tqueue.services;
 
 import com.kaif.tqueue.miscServices.EmailService;
+import com.kaif.tqueue.models.ActivityType;
 import com.kaif.tqueue.models.Task;
-import com.kaif.tqueue.models.TaskType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -21,8 +21,8 @@ public class EmailTaskExecutor implements TaskExecutor{
     private EmailService emailService;
     
     @Override
-    public TaskType getTaskType() {
-        return TaskType.EMAIL_SERVICE;
+    public ActivityType getTaskType() {
+        return ActivityType.EMAIL_SERVICE;
     }
 
     @Override
