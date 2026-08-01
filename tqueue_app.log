@@ -22611,3 +22611,87 @@ Queue Remaining    : 25
 Total Submitted    : 1001 (All-time tasks received)
 Total Completed    : 1001 (Successfully finished)
 ========================================================
+PENDING TASK Optional.empty
+
+[QUEUE EMPTY] Backing off. Next poll in 2433 ms
+
+================== [EXECUTOR METRICS] ==================
+Core Pool Size     : 5
+Max Pool Size      : 10
+Active Threads     : 0 (Threads currently running tasks)
+Current Pool Size  : 5 (Total physical threads created)
+--------------------------------------------------------
+Tasks in Queue     : 0 / 25
+Queue Remaining    : 25
+--------------------------------------------------------
+Total Submitted    : 1001 (All-time tasks received)
+Total Completed    : 1001 (Successfully finished)
+========================================================
+
+[DEAD-MAN-SWITCH] Running periodic sweep for hung or dead tasks...
+
+[DEAD-MAN-SWITCH] Healthy system. Zero dead tasks detected.
+PENDING TASK Optional.empty
+
+[QUEUE EMPTY] Backing off. Next poll in 3940 ms
+
+================== [EXECUTOR METRICS] ==================
+Core Pool Size     : 5
+Max Pool Size      : 10
+Active Threads     : 0 (Threads currently running tasks)
+Current Pool Size  : 5 (Total physical threads created)
+--------------------------------------------------------
+Tasks in Queue     : 0 / 25
+Queue Remaining    : 25
+--------------------------------------------------------
+Total Submitted    : 1001 (All-time tasks received)
+Total Completed    : 1001 (Successfully finished)
+========================================================
+PENDING TASK Optional.empty
+
+[QUEUE EMPTY] Backing off. Next poll in 4922 ms
+
+================== [EXECUTOR METRICS] ==================
+Core Pool Size     : 5
+Max Pool Size      : 10
+Active Threads     : 0 (Threads currently running tasks)
+Current Pool Size  : 5 (Total physical threads created)
+--------------------------------------------------------
+Tasks in Queue     : 0 / 25
+Queue Remaining    : 25
+--------------------------------------------------------
+Total Submitted    : 1001 (All-time tasks received)
+Total Completed    : 1001 (Successfully finished)
+========================================================
+PENDING TASK Optional.empty
+
+[QUEUE EMPTY] Backing off. Next poll in 3540 ms
+
+================== [EXECUTOR METRICS] ==================
+Core Pool Size     : 5
+Max Pool Size      : 10
+Active Threads     : 0 (Threads currently running tasks)
+Current Pool Size  : 5 (Total physical threads created)
+--------------------------------------------------------
+Tasks in Queue     : 0 / 25
+Queue Remaining    : 25
+--------------------------------------------------------
+Total Submitted    : 1001 (All-time tasks received)
+Total Completed    : 1001 (Successfully finished)
+========================================================
+PENDING TASK Optional.empty
+
+[QUEUE EMPTY] Backing off. Next poll in 4937 ms
+
+================== [EXECUTOR METRICS] ==================
+Core Pool Size     : 5
+Max Pool Size      : 10
+Active Threads     : 0 (Threads currently running tasks)
+Current Pool Size  : 5 (Total physical threads created)
+--------------------------------------------------------
+Tasks in Queue     : 0 / 25
+Queue Remaining    : 25
+--------------------------------------------------------
+Total Submitted    : 1001 (All-time tasks received)
+Total Completed    : 1001 (Successfully finished)
+========================================================
