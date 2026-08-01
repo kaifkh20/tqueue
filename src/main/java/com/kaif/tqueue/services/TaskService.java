@@ -1,8 +1,4 @@
-    /*
-     * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
-     * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
-     */
-    package com.kaif.tqueue.services;
+package com.kaif.tqueue.services;
 
 import com.kaif.tqueue.models.Task;
 import java.time.Instant;
@@ -12,60 +8,69 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.task.TaskRejectedException;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Service;
 
-    /**
-     *
-     * @author kaif
-     */
+/**
+ * @author kaif
+ *
+ * CHANGE FROM PREVIOUS VERSION:
+ * Instead of a single sequential poller claiming one task, waiting a fixed
+ * 2000ms, then repeating — we now run N independent poller loops (one per
+ * core pool thread). Each loop:
+ *   - claims a task and submits it for execution
+ *   - if it found work, immediately tries to claim again (no artificial delay)
+ *   - if the queue was empty, backs off with jitter before trying again
+ *
+ * This means the pool actually gets saturated with concurrent claims instead
+ * of being fed one task every ~2s+ by a single loop.
+ */
+@Service
+public class TaskService {
 
-    /*
-            Learning :- Save or saveAndFlush doesn't commit but save() saves the context in persistance context 
-                        saveAndFlush writes the sql statement in the DB temporary buffer storage(which the database knows about for current transaction but is not visible to other users) but wait's for the commit command
-                        which usually happens at then end of method if marked as @Transactional.
+    private static final long EMPTY_QUEUE_BASE_DELAY_MS = 2000;
+    private static final long EMPTY_QUEUE_MAX_JITTER_MS = 3000;
+    private static final long BUSY_LOOP_DELAY_MS = 10; // tiny gap to avoid a true hot spin
 
-    */
-    @Service
-    public class TaskService {
-        private final TaskWorkerService taskWorkerService ;
-        private final ThreadPoolTaskExecutor executorPool;
-        private final ThreadPoolTaskScheduler taskScheduler;
+    private final TaskWorkerService taskWorkerService;
+    private final ThreadPoolTaskExecutor executorPool;
+    private final ThreadPoolTaskScheduler taskScheduler;
 
-    public TaskService(TaskWorkerService taskWorkerService,@Qualifier("executorPool")Executor executorPool,ThreadPoolTaskScheduler taskScheduler) {
+    public TaskService(TaskWorkerService taskWorkerService,
+                        @Qualifier("executorPool") Executor executorPool,
+                        ThreadPoolTaskScheduler taskScheduler) {
         this.taskWorkerService = taskWorkerService;
-        this.executorPool = (ThreadPoolTaskExecutor)executorPool;
+        this.executorPool = (ThreadPoolTaskExecutor) executorPool;
         this.taskScheduler = taskScheduler;
-    }   
-    
-    @EventListener(ApplicationReadyEvent.class)
-    public void startWorkerLoop(){
-        taskScheduler.schedule(this::processOneTask, Instant.now().plusSeconds(20));
     }
-    
 
-//    @Scheduled(fixedRate=2000,initialDelay=20000)
-    public void processOneTask(){
-//        Task task = taskWorkerService.claimTask();
-//        if(task==null){
-//            return ;
-//        }
-//        try{
-//            taskWorkerService.executeTask(task);
-//        }catch(TaskRejectedException e){
-//            System.out.printf("\n[EXECUTOR EXHAUSTED] Worker crashed during execution for Task with ID: %d\n", task.getId());
-////            when Task is rejected we mark it as pending after claiming
-//            taskWorkerService.pendingTask(task);
-//        }
-//        catch(Exception e){
-//            System.out.printf("\n[EXECPTION] %s",e.getMessage());
-//        }
+    @EventListener(ApplicationReadyEvent.class)
+    public void startWorkerLoop() {
+        int numPollers = executorPool.getCorePoolSize();
+        System.out.printf("\n[STARTUP] Launching %d independent poller loops%n", numPollers);
 
-        long nextDelayMs = 2000; // Default base delay (2 seconds)
+        for (int workerId = 0; workerId < numPollers; workerId++) {
+            // Stagger initial starts slightly so all pollers don't hit the DB
+            // in the exact same millisecond on boot.
+            long initialDelayMs = 20_000 + (workerId * 50L);
+            final int id = workerId;
+            taskScheduler.schedule(
+                () -> pollLoop(id),
+                Instant.now().plusMillis(initialDelayMs)
+            );
+        }
+    }
+
+    /**
+     * One independent poller's loop body. Each poller reschedules ITSELF,
+     * so there are `numPollers` of these running concurrently and
+     * independently — not one loop feeding the whole pool.
+     */
+    private void pollLoop(int workerId) {
         boolean taskFound = false;
         Task task = null;
+
         try {
             task = taskWorkerService.claimTask();
             if (task != null) {
@@ -73,30 +78,37 @@ import org.springframework.stereotype.Service;
                 taskWorkerService.executeTask(task);
             }
         } catch (TaskRejectedException e) {
-            // Treat as "task found" but worker pool full, recover state
-            taskFound = true; 
-            System.out.printf("\n[EXECUTOR EXHAUSTED] Worker crashed during execution for Task with ID: %d\n", task.getId());
-            taskWorkerService.pendingTask(task);
-        } catch (Exception e) {
-            System.out.printf("\n[EXCEPTION] %s", e.getMessage());
-        } finally {
-            // Calculate delay for the next execution loop
-            if (!taskFound) {
-                // If queue is empty, add a random jitter between 0 and 3000ms onto the base delay
-                long jitter = ThreadLocalRandom.current().nextLong(0, 3000);
-                nextDelayMs += jitter;
-                System.out.printf("\n[QUEUE EMPTY] Backing off. Next poll in %d ms\n", nextDelayMs);
+            // Pool was full at submit time — put the claimed task back to PENDING
+            // so another poller (or this one, later) can pick it up.
+            taskFound = true;
+            System.out.printf("\n[EXECUTOR EXHAUSTED][worker-%d] Rejected Task ID: %d%n",
+                    workerId, task != null ? task.getId() : -1);
+            if (task != null) {
+                taskWorkerService.pendingTask(task);
             }
-
-            // Programmatically schedule the next single execution pass
-            taskScheduler.schedule(this::processOneTask, Instant.now().plusMillis(nextDelayMs));
+        } catch (Exception e) {
+            System.out.printf("\n[EXCEPTION][worker-%d] %s%n", workerId, e.getMessage());
+        } finally {
+            long nextDelayMs;
+            if (taskFound) {
+                // There was work — go again almost immediately.
+                nextDelayMs = BUSY_LOOP_DELAY_MS;
+            } else {
+                // Queue looked empty to this poller — back off with jitter
+                // so idle pollers aren't hammering the DB in lockstep.
+                long jitter = ThreadLocalRandom.current().nextLong(0, EMPTY_QUEUE_MAX_JITTER_MS);
+                nextDelayMs = EMPTY_QUEUE_BASE_DELAY_MS + jitter;
+            }
+            taskScheduler.schedule(() -> pollLoop(workerId), Instant.now().plusMillis(nextDelayMs));
         }
-        
 
+        logMetrics(workerId);
+    }
 
+    private void logMetrics(int workerId) {
         System.out.printf("""
 
-            ================== [EXECUTOR METRICS] ==================
+            ================== [EXECUTOR METRICS][worker-%d] ==================
             Core Pool Size     : %d
             Max Pool Size      : %d
             Active Threads     : %d (Threads currently running tasks)
@@ -109,6 +121,7 @@ import org.springframework.stereotype.Service;
             Total Completed    : %d (Successfully finished)
             ========================================================
             """,
+            workerId,
             executorPool.getCorePoolSize(),
             executorPool.getMaxPoolSize(),
             executorPool.getActiveCount(),
@@ -119,5 +132,4 @@ import org.springframework.stereotype.Service;
             executorPool.getThreadPoolExecutor().getCompletedTaskCount()
         );
     }
-    
- }
+}
