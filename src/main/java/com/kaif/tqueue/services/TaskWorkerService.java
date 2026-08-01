@@ -6,6 +6,7 @@ package com.kaif.tqueue.services;
 
 import com.kaif.tqueue.dtos.TaskAddRequestDto;
 import com.kaif.tqueue.miscServices.EmailService;
+import com.kaif.tqueue.models.ActivityType;
 import com.kaif.tqueue.models.Task;
 import com.kaif.tqueue.models.TaskStatus;
 import com.kaif.tqueue.repository.TaskRepository;
@@ -52,6 +53,7 @@ public class TaskWorkerService {
                     .description(taskAddRequest.getTaskDescription())
 //                    .taskType(taskAddRequest.getTaskType())
                     .taskStatus(TaskStatus.PENDING)
+                    .taskType(ActivityType.EMAIL_SERVICE)
 //                    .taskDuration(taskAddRequest.getTaskDuration())
                     .createdAt(Instant.now())
 //                    .shouldFail(taskAddRequest.isShouldFail())
@@ -74,48 +76,46 @@ public class TaskWorkerService {
             return pendingTask.get();
         }
 
-    @Async("executorPool")
-    public void executeTask(Task task) {
-        System.out.printf("\n[WORKING] Task with ID: %d \n", task.getId());
-        long startTime = System.currentTimeMillis();
+        @Async("executorPool")
+        public void executeTask(Task task) {
+            ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor();
 
-        // 1. Spin up a lightweight scheduler dedicated solely to this task's background heartbeat
-        ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor();
+            try {
+                heartbeatScheduler.scheduleAtFixedRate(() -> {
+                    try {
+                        // Ensure heartbeat only runs if status is still active
+                        if (task.getHeartBeatAt() != null || task.getTaskStatus() == TaskStatus.PROCESSING) {
+                            updateHeartBeat(task);
+                        }
+                    } catch (Exception e) {
+                        System.err.printf("Failed to update heartbeat for task %d: %s\n", task.getId(), e.getMessage());
+                    }
+                }, 0, 5, TimeUnit.SECONDS);
 
-        try {
-            heartbeatScheduler.scheduleAtFixedRate(() -> {
-                try {
-                    updateHeartBeat(task);
-                } catch (Exception e) {
-                    System.err.printf("Failed to update heartbeat for task %d: %s\n", task.getId(), e.getMessage());
+                TaskExecutor executor = taskExecutorRegistry.resolve(task);
+                executor.execute(task);
+
+                completeTask(task);
+
+            } catch (RuntimeException e) {
+                // CANCEL HEARTBEAT FIRST before resetting task status in DB
+                heartbeatScheduler.shutdownNow(); 
+
+                System.out.printf("\n[RUNTIME EXCEPTION] Task ID: %d. Retry Count: %d \n", task.getId(), task.getRetryCount());
+                retryTask(task);
+
+            } catch (Exception e) {
+                heartbeatScheduler.shutdownNow();
+                if (e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
+                    interruptTask(task);
+                    Thread.currentThread().interrupt(); 
+                } else {
+                    e.printStackTrace();
                 }
-            }, 0, 5, TimeUnit.SECONDS);
-            
-            TaskExecutor executor = taskExecutorRegistry.resolve(task);
-            executor.execute(task);
-
-            long duration = (System.currentTimeMillis() - startTime) / 1000;
-            System.out.printf("\n[WORKED] Task with ID: %d and completed in %d seconds\n", task.getId(), duration);
-
-            completeTask(task);
-
-        } catch (RuntimeException e) {
-            System.out.printf("\n[RUNTIME EXCEPTION] Task ID: %d. Retry Count: %d \n", task.getId(), task.getRetryCount());
-            retryTask(task);
-
-        } catch (Exception e) {
-            if (e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
-                System.out.printf("\n[SHUTDOWN] Task interrupted for ID: %d. Skipping completion.\n", task.getId());
-                interruptTask(task);
-                Thread.currentThread().interrupt(); 
-            } else {
-                System.out.printf("\n[WORKER CRASHED] Unexpected failure for Task with ID: %d\n", task.getId());
-                e.printStackTrace();
+            } finally {
+                heartbeatScheduler.shutdownNow(); // Ensure cleanup on success
             }
-        } finally {
-            heartbeatScheduler.shutdown();
         }
-    }
         
         
         //    every 30 seconds it checks for dead workers and retry it 
@@ -146,9 +146,13 @@ public class TaskWorkerService {
             }
         }
         
-        public void updateHeartBeat(Task task){
+        public void updateHeartBeat(Task task) {
             taskRegistry.setHeartBeatAt(task);
-            System.out.printf("\n[HEARTBEAT]Task with ID: %d is active Last Heartbeat at: %s\n",task.getId(),task.getHeartBeatAt().toString());
+
+            // SAFE: %s automatically prints "null" if task.getHeartBeatAt() is null
+            System.out.printf("\n[HEARTBEAT] Task with ID: %d is active. Last Heartbeat at: %s\n", 
+                    task.getId(), 
+                    task.getHeartBeatAt());
         }
         
         public void processTask(Task task){

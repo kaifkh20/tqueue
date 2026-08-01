@@ -45,35 +45,44 @@ public class TaskRegistry {
         taskRepository.save(task);
     }
     @Transactional
-    public void setRetryStatus(Task task){
-        int retryCount = task.getRetryCount();
-        if(retryCount<MAX_RETRY){
-            task.setTaskStatus(TaskStatus.PENDING);
-        }else{
-            task.setTaskStatus(TaskStatus.FAILED);   
-        }
-        task.setRetryCount(retryCount+1);
-        task.setRetriedAt(Instant.now());
-//        adding jitter
-        long delaySeconds = (long) Math.pow(2, task.getRetryCount());
-        long jitterMillis = (long) (Math.random() * 1000);
+    public void setRetryStatus(Task task) {
+        int currentRetries = task.getRetryCount();
 
-        task.setNextRetryAt(Instant.now()
-            .plus(Duration.ofSeconds(delaySeconds))
-            .plus(Duration.ofMillis(jitterMillis)));
-        
+        if (currentRetries < MAX_RETRY) {
+            // --- TASK CAN BE RETRIED ---
+            task.setTaskStatus(TaskStatus.PENDING);
+            task.setRetryCount(currentRetries + 1);
+            task.setRetriedAt(Instant.now());
+
+            // Exponential backoff using pre-increment retry count: 2^0=1s, 2^1=2s, 2^2=4s...
+            long delaySeconds = (long) Math.pow(2, currentRetries);
+            long jitterMillis = (long) (Math.random() * 1000);
+
+            task.setNextRetryAt(Instant.now()
+                    .plus(Duration.ofSeconds(delaySeconds))
+                    .plus(Duration.ofMillis(jitterMillis)));
+
+        } else {
+            // --- PERMANENT FAILURE ---
+            task.setTaskStatus(TaskStatus.FAILED);
+            task.setProcessingEndedAt(Instant.now());
+            task.setNextRetryAt(null); // Explicitly clear retry timer
+        }
+
+        // Reset runtime tracking fields for the next pickup or terminal state
         task.setHeartBeatAt(null);
-        task.setProcessingStartedAt(null);
         task.setLastHeartBeatAt(null);
-        task.setProcessingEndedAt(null);
-        
+        task.setProcessingStartedAt(null);
+
         taskRepository.save(task);
     }
     
     @Transactional 
-    public void setHeartBeatAt(Task task){
-        task.setHeartBeatAt(Instant.now());
-        taskRepository.save(task);
+    public Task setHeartBeatAt(Task task){
+        Instant now = Instant.now();
+        task.setHeartBeatAt(now);
+        task.setLastHeartBeatAt(now); // Keeping last heartbeat synchronized
+        return taskRepository.save(task);
     }
 
     void setPendingStatus(Task task) {
