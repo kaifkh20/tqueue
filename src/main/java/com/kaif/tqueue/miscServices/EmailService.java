@@ -35,6 +35,12 @@ public class EmailService {
     }
     
     private void executeEmailDelivery(Long taskId, String recipient) {
+        try{
+            Thread.sleep(50);
+            System.out.println("[WAITING] EmailService 50ms....");
+        }catch(Exception e){
+            System.out.print(e);
+        }
         System.out.printf("Task ID: %d successfully sent to Email: %s\n", taskId, recipient);
     }
 }

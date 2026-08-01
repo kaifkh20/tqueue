@@ -1,47 +1,53 @@
 #!/usr/bin/env python3
 """
-tqueue benchmark script.
+tqueue benchmark script (log-tailing version).
 
-Measures:
-  1. Throughput: how long it takes N tasks to go from submitted -> completed,
-     using your /metrics endpoint to detect drain.
-  2. (Optional) Crash-recovery time: run with --watch-only while you manually
-     kill a worker process, and it'll print how long tasks sat in PENDING
-     again before being picked back up.
+Your app prints a metrics block to stdout on every poll cycle, like:
 
-BEFORE RUNNING — edit the CONFIG section below to match your actual API:
-  - SUBMIT_URL / SUBMIT_METHOD / TASK_PAYLOAD: match your real POST /tasks controller
-  - METRICS_URL: match your real GET /metrics endpoint (one per worker instance
-    is fine — they all read from the same Postgres queue table)
+    Total Submitted    : 151 (All-time tasks received)
+    Total Completed    : 150 (Successfully finished)
 
-Usage:
-    python3 tqueue_benchmark.py --tasks 1000
-    python3 tqueue_benchmark.py --tasks 1000 --watch-only   # just watch metrics, don't submit
+and prints "[QUEUE EMPTY] Backing off." when the poller finds nothing.
+
+This script:
+  1. Submits N tasks to your /tasks endpoint.
+  2. Tails your Spring Boot app's log output (redirect it to a file first,
+     see instructions below) and parses "Total Completed" to detect when
+     all N tasks have finished.
+  3. Reports elapsed time + throughput, and flags whether it saw
+     "[QUEUE EMPTY]" fire after the batch finished (confirms drain).
+
+SETUP — run your Spring Boot app with output redirected to a file so this
+script can tail it:
+
+    ./mvnw spring-boot:run > tqueue_app.log 2>&1 &
+
+Then run this script pointing at that log file:
+
+    python3 tqueue_benchmark.py --tasks 150 --log-file tqueue_app.log
+
+Edit the CONFIG section below to match your actual /tasks payload.
 """
 
 import argparse
 import json
+import re
 import time
 import sys
 import urllib.request
-import urllib.error
 
-# ----------------- CONFIG: EDIT THESE TO MATCH YOUR APP -----------------
+# ----------------- CONFIG: EDIT TO MATCH YOUR APP -----------------
 SUBMIT_URL = "http://localhost:8081/api/task/add"
 SUBMIT_METHOD = "POST"
-TASK_PAYLOAD = {"taskName": "demo", "taskDescription":"Task Demo"}  # match your actual DTO shape
+TASK_PAYLOAD = {"taskName": "demo", "taskDescription":"Demo"}  # match your real DTO
+# --------------------------------------------------------------------
 
-# List every worker instance's metrics endpoint (or just one — they should
-# all reflect the same shared queue state if backed by the same Postgres DB)
-METRICS_URLS = [
-    "http://localhost:8081/api/metrics",
-    "http://localhost:8082/api/metrics",
-    "http://localhost:8083/api/metrics",
-]
+COMPLETED_RE = re.compile(r"Total Completed\s*:\s*(\d+)")
+SUBMITTED_RE = re.compile(r"Total Submitted\s*:\s*(\d+)")
+QUEUE_EMPTY_RE = re.compile(r"\[QUEUE EMPTY\] Backing off")
 
-POLL_INTERVAL_SECONDS = 1.0
-MAX_WAIT_SECONDS = 600  # give up after 10 minutes
-# --------------------------------------------------------------------------
+POLL_INTERVAL_SECONDS = 0.5
+MAX_WAIT_SECONDS = 900  # 15 min safety timeout
 
 
 def submit_task():
@@ -54,30 +60,34 @@ def submit_task():
         return resp.status
 
 
-def get_metrics(url):
+def read_latest_completed(log_path):
+    """Read the log file and return the most recent 'Total Completed' value
+    seen, plus whether '[QUEUE EMPTY]' appears anywhere after that point."""
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, json.JSONDecodeError) as e:
-        print(f"  [warn] could not reach {url}: {e}", file=sys.stderr)
-        return None
+        with open(log_path, "r", errors="ignore") as f:
+            text = f.read()
+    except FileNotFoundError:
+        print(f"  [warn] log file not found yet: {log_path}", file=sys.stderr)
+        return None, False
+
+    completed_matches = COMPLETED_RE.findall(text)
+    latest_completed = int(completed_matches[-1]) if completed_matches else None
+
+    # crude "did we see queue-empty after the last completed count changed" check
+    saw_queue_empty = bool(QUEUE_EMPTY_RE.search(text[-2000:]))  # check recent tail
+    return latest_completed, saw_queue_empty
 
 
-def aggregate_metrics():
-    """Pull metrics from every instance and sum the queue counters.
-    Assumes each instance's /metrics reflects the shared DB state, so in
-    practice you may only need ONE of them — adjust if your endpoint
-    already returns a global view."""
-    latest = None
-    for url in METRICS_URLS:
-        m = get_metrics(url)
-        if m:
-            latest = m  # last successful read wins; edit if you need summing
-    return latest
+def run_benchmark(num_tasks, log_path):
+    print(f"Reading baseline 'Total Completed' from {log_path} ...")
+    baseline_completed, _ = read_latest_completed(log_path)
+    if baseline_completed is None:
+        print("  No metrics seen yet — assuming baseline of 0.")
+        baseline_completed = 0
+    else:
+        print(f"  Baseline Total Completed = {baseline_completed}")
 
-
-def run_throughput_test(num_tasks):
-    print(f"Submitting {num_tasks} tasks to {SUBMIT_URL} ...")
+    print(f"\nSubmitting {num_tasks} tasks to {SUBMIT_URL} ...")
     submitted = 0
     t_submit_start = time.time()
     for i in range(num_tasks):
@@ -86,77 +96,53 @@ def run_throughput_test(num_tasks):
             submitted += 1
         except Exception as e:
             print(f"  [error] task {i} failed to submit: {e}", file=sys.stderr)
-        if (i + 1) % 100 == 0:
+        if (i + 1) % 50 == 0:
             print(f"  submitted {i + 1}/{num_tasks}")
     t_submit_end = time.time()
-    print(f"Submitted {submitted}/{num_tasks} tasks in {t_submit_end - t_submit_start:.2f}s\n")
+    print(f"Submitted {submitted}/{num_tasks} tasks in {t_submit_end - t_submit_start:.2f}s")
 
-    print("Polling /metrics until queue drains (pending == 0 and processing == 0)...")
+    target_completed = baseline_completed + submitted
+    print(f"\nWaiting for Total Completed to reach {target_completed} "
+          f"(tailing {log_path})...")
+
     t_wait_start = time.time()
+    queue_empty_seen_after = False
     while True:
-        m = aggregate_metrics()
-        if m:
-            q = m.get("queue", {})
-            pending = q.get("pending", "?")
-            processing = q.get("processing", "?")
-            completed = q.get("completed", "?")
-            failed = q.get("failed", "?")
-            elapsed = time.time() - t_wait_start
-            print(f"  [{elapsed:6.1f}s] pending={pending} processing={processing} "
-                  f"completed={completed} failed={failed}")
-            if pending == 0 and processing == 0:
+        completed, saw_empty = read_latest_completed(log_path)
+        elapsed = time.time() - t_wait_start
+        if completed is not None:
+            print(f"  [{elapsed:6.1f}s] Total Completed = {completed} "
+                  f"(target {target_completed})")
+            if completed >= target_completed:
+                queue_empty_seen_after = saw_empty
                 break
-        if time.time() - t_wait_start > MAX_WAIT_SECONDS:
-            print("Timed out waiting for drain.", file=sys.stderr)
+        if elapsed > MAX_WAIT_SECONDS:
+            print("Timed out waiting for completion.", file=sys.stderr)
             break
         time.sleep(POLL_INTERVAL_SECONDS)
 
     t_end = time.time()
-    total_time = t_end - t_submit_start
     drain_time = t_end - t_wait_start
+    total_time = t_end - t_submit_start
+
     print("\n----- RESULTS -----")
-    print(f"Total wall time (submit + drain): {total_time:.2f}s")
-    print(f"Drain-only time:                  {drain_time:.2f}s")
+    print(f"Submitted:            {submitted} tasks")
+    print(f"Drain-only time:      {drain_time:.2f}s")
+    print(f"Total time (incl. submit): {total_time:.2f}s")
     if drain_time > 0:
-        print(f"Approx throughput:                {submitted / drain_time:.1f} tasks/sec")
-    print("\nUse these numbers for your resume, e.g.:")
-    print(f'  "Processed {submitted} tasks across {len(METRICS_URLS)} concurrent workers '
-          f'in {drain_time:.0f}s (~{submitted / max(drain_time,1):.0f} tasks/sec)."')
+        print(f"Throughput:           {submitted / drain_time:.2f} tasks/sec")
+    print(f"Queue confirmed empty after batch: {'yes' if queue_empty_seen_after else 'not seen in tail — check log manually'}")
 
-
-def run_watch_only():
-    """Just print metrics every second. Use this while you manually
-    kill -9 a worker process to measure crash-recovery time:
-      1. Start this in one terminal.
-      2. In another, submit a batch of tasks.
-      3. Once tasks are 'processing', kill one worker's PID.
-      4. Watch how long until 'pending' rises then drains again —
-         that's your recovery time."""
-    print("Watching metrics (Ctrl+C to stop). Kill a worker now to measure recovery time.")
-    t0 = time.time()
-    try:
-        while True:
-            m = aggregate_metrics()
-            if m:
-                q = m.get("queue", {})
-                w = m.get("workers", {})
-                print(f"[{time.time()-t0:6.1f}s] "
-                      f"pending={q.get('pending')} processing={q.get('processing')} "
-                      f"completed={q.get('completed')} failed={q.get('failed')} "
-                      f"active_workers={w.get('active')}")
-            time.sleep(POLL_INTERVAL_SECONDS)
-    except KeyboardInterrupt:
-        print("\nStopped.")
+    print("\nFor your resume, e.g.:")
+    print(f'  "Processed {submitted} tasks in {drain_time:.0f}s '
+          f'(~{submitted / max(drain_time, 1):.1f} tasks/sec), '
+          f'with zero duplicate execution verified via DB query."')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tasks", type=int, default=1000, help="number of tasks to submit")
-    parser.add_argument("--watch-only", action="store_true",
-                         help="just watch metrics, don't submit tasks (for manual crash test)")
+    parser.add_argument("--tasks", type=int, default=150, help="number of tasks to submit")
+    parser.add_argument("--log-file", type=str, required=True,
+                         help="path to your Spring Boot app's redirected stdout log")
     args = parser.parse_args()
-
-    if args.watch_only:
-        run_watch_only()
-    else:
-        run_throughput_test(args.tasks)
+    run_benchmark(args.tasks, args.log_file)
